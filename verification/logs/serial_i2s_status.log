@@ -1,0 +1,12 @@
+I2S status:
+  running: no
+  pio: (not running)
+  sample_rate: 44100
+  word_width: 16
+  channels: 2
+  tone_freq: 440 Hz
+  buffer_frames: 512
+  LRCLK pwm slice: 6
+LOG: tick 1
+LOG: tick 2
+LOG: tick 3

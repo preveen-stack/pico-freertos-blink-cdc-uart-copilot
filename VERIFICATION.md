@@ -93,4 +93,20 @@ RequestedHz,MeasuredHz
 - Pico SDK commit: a1438dff
 - FreeRTOS-Kernel commit: d1f551e25
 
+## I2S status verification (2026-04-30T13:22:39+05:30)
+- verification/logs/serial_i2s_status.log
+
+Excerpt:
+```
+I2S status:
+  running: no
+  pio: (not running)
+  sample_rate: 44100
+  word_width: 16
+  channels: 2
+  tone_freq: 440 Hz
+  buffer_frames: 512
+  LRCLK pwm slice: 6
+```
+
 Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
