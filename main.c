@@ -13,6 +13,7 @@
 
 static volatile uint32_t blink_interval_ms = 500;
 static volatile bool blink_enabled = true;
+static volatile bool tick_enabled = true;
 
 void blink_task(void *pvParameters) {
     (void) pvParameters;
@@ -35,8 +36,10 @@ void log_task(void *pvParameters) {
     uint32_t cnt = 0;
     for (;;) {
         // Print log over USB CDC (stdio is routed to USB because CMake enables it)
-        printf("LOG: tick %u\r\n", (unsigned)cnt++);
-        fflush(stdout);
+        if (tick_enabled) {
+            printf("LOG: tick %u\r\n", (unsigned)cnt++);
+            fflush(stdout);
+        }
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
@@ -54,7 +57,7 @@ void command_task(void *pvParameters) {
     char buf[128];
     size_t idx = 0;
     int c;
-    printf("Command task started. Commands: 'clocks', 'blink start', 'blink stop', 'blink interval <ms>', 'bootsel', 'reset'\r\n");
+    printf("Command task started. Commands: 'clocks', 'blink start', 'blink stop', 'blink interval <ms>', 'tick on', 'tick off', 'bootsel', 'reset'\r\n");
     fflush(stdout);
 
     for (;;) {
@@ -70,7 +73,15 @@ void command_task(void *pvParameters) {
                 // trim leading spaces
                 char *p = buf;
                 while (*p && (*p == ' ' || *p == '\t')) p++;
-                if (strcmp(p, "clocks") == 0) {
+                if (strcmp(p, "tick on") == 0) {
+                    tick_enabled = true;
+                    printf("ACK: tick enabled\r\n");
+                    fflush(stdout);
+                } else if (strcmp(p, "tick off") == 0) {
+                    tick_enabled = false;
+                    printf("ACK: tick disabled\r\n");
+                    fflush(stdout);
+                } else if (strcmp(p, "clocks") == 0) {
                     print_clocks();
                 } else if (strcmp(p, "blink start") == 0) {
                     blink_enabled = true;
