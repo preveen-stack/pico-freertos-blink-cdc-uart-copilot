@@ -181,6 +181,33 @@ void command_task(void *pvParameters) {
                         printf("ACK: tone frequency set to %u Hz\r\n", (unsigned)tone_freq_hz);
                     }
                     fflush(stdout);
+                } else if (strncmp(p, "tone measure", 12) == 0) {
+                    // tone measure <ms> : measure pin transitions for given ms (default 200 ms)
+                    char *num = p + 12;
+                    long ms = 200;
+                    if (*num) ms = strtol(num, NULL, 10);
+                    if (ms < 10) ms = 10;
+                    if (ms > 2000) ms = 2000; // limit
+                    if (!tone_running) {
+                        printf("ERR: tone not running, cannot measure\r\n");
+                        fflush(stdout);
+                    } else {
+                        uint64_t start = time_us_64();
+                        uint64_t end = start + (uint64_t)ms * 1000ULL;
+                        int prev = gpio_get(TONE_PIN);
+                        uint32_t edges = 0;
+                        while (time_us_64() < end) {
+                            int lvl = gpio_get(TONE_PIN);
+                            if (lvl != prev) {
+                                edges++;
+                                prev = lvl;
+                            }
+                        }
+                        double duration_s = (double)ms / 1000.0;
+                        double freq = ((double)edges) / (2.0 * duration_s);
+                        printf("MEAS: edges=%u, duration_ms=%u, freq=%.2f Hz\r\n", (unsigned)edges, (unsigned)ms, freq);
+                        fflush(stdout);
+                    }
                 } else if (strncmp(p, "i2s init ", 9) == 0) {
                     // parse three args: sample_rate, word_width, channels
                     uint32_t sr = 0; uint32_t ww = 0; uint32_t ch = 0;
