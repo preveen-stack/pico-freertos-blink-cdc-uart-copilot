@@ -387,8 +387,7 @@ void command_task(void *pvParameters) {
                     printf("  buffer_frames: %u\r\n", (unsigned)I2S_BUFFER_FRAMES);
                     // LRCLK PWM info
                     int lr_slice = pwm_gpio_to_slice_num(I2S_LRCLK_PIN);
-                    uint32_t wrap = pwm_get_wrap(lr_slice);
-                    printf("  LRCLK pwm slice: %d, wrap: %u\r\n", lr_slice, (unsigned)wrap);
+                    printf("  LRCLK pwm slice: %d\r\n", lr_slice);
                     fflush(stdout);
                 } else if (strncmp(p, "i2s tone ", 9) == 0) {
                     char *num = p + 9;
