@@ -369,6 +369,27 @@ void command_task(void *pvParameters) {
                     i2s_start();
                 } else if (strcmp(p, "i2s stop") == 0) {
                     i2s_stop();
+                } else if (strcmp(p, "i2s status") == 0) {
+                    // print runtime I2S/PIO/DMA/PWM status
+                    printf("I2S status:\r\n");
+                    printf("  running: %s\r\n", i2s_running ? "yes" : "no");
+                    if (i2s_running) {
+                        printf("  pio: pio%d\r\n", (i2s_pio==pio0)?0:1);
+                        printf("  sm: %u\r\n", (unsigned)i2s_sm);
+                        printf("  dma_chan: %d\r\n", i2s_dma_chan);
+                    } else {
+                        printf("  pio: (not running)\r\n");
+                    }
+                    printf("  sample_rate: %u\r\n", (unsigned)i2s_cfg.sample_rate);
+                    printf("  word_width: %u\r\n", (unsigned)i2s_cfg.word_width);
+                    printf("  channels: %u\r\n", (unsigned)i2s_cfg.channels);
+                    printf("  tone_freq: %u Hz\r\n", (unsigned)i2s_tone_freq);
+                    printf("  buffer_frames: %u\r\n", (unsigned)I2S_BUFFER_FRAMES);
+                    // LRCLK PWM info
+                    int lr_slice = pwm_gpio_to_slice_num(I2S_LRCLK_PIN);
+                    uint32_t wrap = pwm_get_wrap(lr_slice);
+                    printf("  LRCLK pwm slice: %d, wrap: %u\r\n", lr_slice, (unsigned)wrap);
+                    fflush(stdout);
                 } else if (strncmp(p, "i2s tone ", 9) == 0) {
                     char *num = p + 9;
                     long val = strtol(num, NULL, 10);
