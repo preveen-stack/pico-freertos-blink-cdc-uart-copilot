@@ -27,7 +27,7 @@
 
 static volatile uint32_t blink_interval_ms = 500;
 static volatile bool blink_enabled = true;
-static volatile bool tick_enabled = true;
+static volatile bool tick_enabled = false;
 
 // Tone settings
 static volatile uint32_t tone_freq_hz = 400; // default 400Hz
@@ -270,7 +270,7 @@ void command_task(void *pvParameters) {
     char buf[128];
     size_t idx = 0;
     int c;
-    printf("Command task started. Commands: 'clocks', 'blink start', 'blink stop', 'blink interval <ms>', 'tick on', 'tick off', 'tone start', 'tone stop', 'tone freq <Hz>', 'tone measure <ms>', 'i2s init <sample_rate> <word_width> <channels>', 'i2s start', 'i2s stop', 'i2s tone <Hz>', 'bootsel', 'reset'\r\n");
+    printf("Command task started. Type 'help' for available commands.\r\n");
     fflush(stdout);
 
     for (;;) {
@@ -286,7 +286,28 @@ void command_task(void *pvParameters) {
                 // trim leading spaces
                 char *p = buf;
                 while (*p && (*p == ' ' || *p == '\t')) p++;
-                if (strcmp(p, "tick on") == 0) {
+                if (strcmp(p, "help") == 0) {
+                    printf("Available commands:\r\n");
+                    printf("  clocks                    - Print system clock frequencies\r\n");
+                    printf("  blink start               - Start blinking LED\r\n");
+                    printf("  blink stop                - Stop blinking LED\r\n");
+                    printf("  blink interval <ms>       - Set blink interval (ms)\r\n");
+                    printf("  tick on                   - Enable periodic log tick\r\n");
+                    printf("  tick off                  - Disable periodic log tick\r\n");
+                    printf("  tone start                - Start tone output (square wave on GPIO 18)\r\n");
+                    printf("  tone stop                 - Stop tone output\r\n");
+                    printf("  tone freq <Hz>            - Set tone frequency (1-15000 Hz)\r\n");
+                    printf("  tone measure <ms>         - Measure tone frequency by sampling (default 200ms)\r\n");
+                    printf("  i2s init <sr> <ww> <ch>   - Initialize I2S (sample_rate, word_width, channels)\r\n");
+                    printf("  i2s start                 - Start I2S streaming\r\n");
+                    printf("  i2s stop                  - Stop I2S streaming\r\n");
+                    printf("  i2s status                - Report I2S runtime status\r\n");
+                    printf("  i2s tone <Hz>             - Set I2S tone frequency for next buffer fill\r\n");
+                    printf("  bootsel                   - Reboot into BOOTSEL/USB mass storage mode\r\n");
+                    printf("  reset                     - Reset the board\r\n");
+                    printf("  help                      - Show this help message\r\n");
+                    fflush(stdout);
+                } else if (strcmp(p, "tick on") == 0) {
                     tick_enabled = true;
                     printf("ACK: tick enabled\r\n");
                     fflush(stdout);
