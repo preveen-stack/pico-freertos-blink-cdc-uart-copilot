@@ -63,3 +63,23 @@ Notes
 - To reproduce: connect to the Pico's USB-CDC (e.g., screen /dev/tty.usbmodem* 115200), send commands terminated with newline or run scripts/verify_serial.sh.
 
 Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
+\nTone sweep verification (2026-04-30T05:50:28Z UTC)
+--------------------------------
+RequestedHz,MeasuredHz
+RequestedHz,MeasuredHz
+1000,
+2000,
+3000,
+4000,
+5000,
+6000,
+7000,
+8000,
+9000,
+10000,
+11000,
+12000,
+13000,
+14000,
+15000,
+\nRaw log: verification/logs/serial_tone_sweep.log
