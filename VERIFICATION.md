@@ -13,10 +13,13 @@ Actions performed
 
 Captured logs (pre-BOOTSEL)
 ---------------------------
+```
 ACK: rebooting to BOOTSEL (entering USB mass storage bootloader)
+```
 
 Captured logs (post-flash)
 --------------------------
+```
 LOG: tick 1
 System clocks:
   clk_sys:  125000000 Hz
@@ -30,6 +33,7 @@ ACK: blink started
 LOG: tick 3
 ACK: blink stopped
 LOG: tick 4
+```
 
 Conclusion
 - All commands responded as expected. Bootsel, reset, blink control, blink interval, and tick on/off work.
