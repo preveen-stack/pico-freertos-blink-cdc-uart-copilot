@@ -26,9 +26,9 @@ Copy the generated .uf2 to the Pico in BOOTSEL mode.
 - USB: USB-C (USB-CDC / TinyUSB used for stdio over USB)
 
 ## Software versions and tools (observed on host)
-- FreeRTOS Kernel: FreeRTOS-Kernel V11.1.0 (part of FreeRTOS 202406.00 LTS)
-- Pico SDK: 2.2.0 (from pico_sdk_version.cmake)
-- Toolchain: arm-none-eabi-gcc (Arm GNU Toolchain 14.2.1) — path: /usr/local/bin/arm-none-eabi-gcc
+- Pico SDK: commit a1438dff (local path: pico/pico-sdk)
+- FreeRTOS Kernel: commit d1f551e25 (local path: FreeRTOS-Kernel)
+- Toolchain: arm-none-eabi-gcc (GNU 14.2.1) — /usr/local/bin/arm-none-eabi-gcc
 
 ## Notes & recommendations
 - Large raw logs were added under verification/logs for traceability; consider removing or moving to CI artifacts if repo size becomes an issue.
