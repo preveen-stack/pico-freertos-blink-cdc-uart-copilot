@@ -11,8 +11,19 @@
 #include <stdlib.h>
 #include <math.h>
 
+#include "hardware/pio.h"
+#include "hardware/dma.h"
+#include "hardware/irq.h"
+#include "hardware/pwm.h"
+#include "i2s.pio.h"
+
 #define BLINK_GPIO 25
 #define TONE_PIN 18  // PWM-capable pin used for tone output (change as needed)
+
+// Default I2S pins (change via i2s init if desired)
+#define I2S_DATA_PIN 15
+#define I2S_BCLK_PIN 14
+#define I2S_LRCLK_PIN 13
 
 static volatile uint32_t blink_interval_ms = 500;
 static volatile bool blink_enabled = true;
@@ -22,14 +33,30 @@ static volatile bool tick_enabled = true;
 static volatile uint32_t tone_freq_hz = 400; // default 400Hz
 static volatile bool tone_running = false;
 
-// I2S configuration stub
+// I2S configuration
 typedef struct {
     uint32_t sample_rate;
-    uint8_t word_width; // bits
+    uint8_t word_width; // bits (8/16/24/32)
     uint8_t channels; // 1=mono,2=stereo
 } i2s_config_t;
 static i2s_config_t i2s_cfg = {44100, 16, 2};
 
+// I2S PIO+DMA state
+static PIO i2s_pio = pio0;
+static uint i2s_sm = 0xffff;
+static int i2s_dma_chan = -1;
+static volatile bool i2s_running = false;
+
+// Buffer: 32-bit words, each word holds left<<16 | (right & 0xFFFF)
+#define I2S_BUFFER_FRAMES 512u // power-of-two
+static uint32_t i2s_buffer[I2S_BUFFER_FRAMES];
+static uint32_t i2s_tone_freq = 440; // default tone for I2S
+
+// Forward declarations
+static void i2s_fill_buffer(uint32_t tone_freq_hz);
+static bool i2s_init_pio_dma(void);
+static void i2s_start(void);
+static void i2s_stop(void);
 
 void blink_task(void *pvParameters) {
     (void) pvParameters;
@@ -65,8 +92,6 @@ static void tone_start(void) {
     int64_t half_us = (1000000LL) / (2 * (int64_t)freq);
     if (half_us < 1) half_us = 1;
     // start repeating timer; if already running, update by removing and adding
-    // remove if exists
-    // Best-effort: try cancelling previous timer
     cancel_repeating_timer(&tone_timer);
     add_repeating_timer_us((int64_t)half_us, tone_timer_cb, NULL, &tone_timer);
     tone_running = true;
@@ -109,12 +134,143 @@ static void print_clocks(void) {
     fflush(stdout);
 }
 
+// DMA IRQ handler: restart transfer to create continuous circular streaming
+static void __not_in_flash_func(i2s_dma_irq0_handler)(void) {
+    // acknowledge
+    dma_hw->ints0 = 1u << i2s_dma_chan;
+    // restart transfer
+    dma_channel_set_read_addr(i2s_dma_chan, i2s_buffer, false);
+    dma_channel_set_trans_count(i2s_dma_chan, I2S_BUFFER_FRAMES, true);
+}
+
+static bool i2s_init_pio_dma(void) {
+    if (i2s_running) return true;
+    // claim a state machine
+    if (i2s_sm == 0xffff) {
+        i2s_sm = pio_claim_unused_sm(i2s_pio, true);
+    }
+    uint offset = pio_add_program(i2s_pio, &i2s_tx_program);
+    pio_sm_config c = i2s_tx_program_get_default_config(offset);
+    // data out pin
+    sm_config_set_out_pins(&c, I2S_DATA_PIN, 1);
+    // sideset pin is BCLK
+    sm_config_set_sideset_pins(&c, I2S_BCLK_PIN);
+    // shift MSB first, autopull every 32 bits
+    sm_config_set_out_shift(&c, false, true, 32);
+    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);
+    // init pins
+    pio_gpio_init(i2s_pio, I2S_DATA_PIN);
+    pio_gpio_init(i2s_pio, I2S_BCLK_PIN);
+    pio_gpio_init(i2s_pio, I2S_LRCLK_PIN);
+    // set pin directions
+    pio_sm_set_consecutive_pindirs(i2s_pio, i2s_sm, I2S_DATA_PIN, 1, true);
+    // sideset pin direction
+    pio_sm_set_consecutive_pindirs(i2s_pio, i2s_sm, I2S_BCLK_PIN, 1, true);
+    // configure and enable
+    pio_sm_init(i2s_pio, i2s_sm, offset, &c);
+
+    // claim DMA channel
+    i2s_dma_chan = dma_claim_unused_channel(true);
+    dma_channel_config dmac = dma_channel_get_default_config(i2s_dma_chan);
+    channel_config_set_transfer_data_size(&dmac, DMA_SIZE_32);
+    channel_config_set_read_increment(&dmac, true);
+    channel_config_set_write_increment(&dmac, false);
+    channel_config_set_dreq(&dmac, pio_get_dreq(i2s_pio, i2s_sm, true));
+    // set ring on read to buffer size
+    // buffer bytes = I2S_BUFFER_FRAMES * 4
+    int log2_bytes = 0;
+    uint32_t bytes = I2S_BUFFER_FRAMES * sizeof(uint32_t);
+    while ((1u << log2_bytes) < bytes) log2_bytes++;
+    // ensure exact power of two
+    if ((1u << log2_bytes) != bytes) return false;
+    channel_config_set_ring(&dmac, true, log2_bytes);
+    dma_channel_configure(i2s_dma_chan, &dmac,
+                          &i2s_pio->txf[i2s_sm], // dst
+                          i2s_buffer,            // src
+                          I2S_BUFFER_FRAMES,     // transfer count
+                          false);
+    // enable irq on completion
+    dma_channel_set_irq0_enabled(i2s_dma_chan, true);
+    irq_set_exclusive_handler(DMA_IRQ_0, i2s_dma_irq0_handler);
+    irq_set_enabled(DMA_IRQ_0, true);
+    return true;
+}
+
+static void i2s_fill_buffer(uint32_t tone_freq_hz) {
+    // generate sine samples for the configured sample rate
+    const uint32_t S = i2s_cfg.sample_rate;
+    const uint32_t N = I2S_BUFFER_FRAMES;
+    for (uint32_t n = 0; n < N; ++n) {
+        double t = (double)n / (double)S;
+        double v = sin(2.0 * M_PI * (double)tone_freq_hz * t);
+        int16_t samp = (int16_t)(v * 0x7FFF);
+        uint32_t word = ((uint16_t)samp << 16) | ((uint16_t)samp & 0xFFFF);
+        i2s_buffer[n] = word;
+    }
+}
+
+static void i2s_start(void) {
+    if (i2s_running) return;
+    if (!i2s_init_pio_dma()) {
+        printf("ERR: i2s init failed\r\n");
+        return;
+    }
+    // prepare LRCLK via PWM (50% duty at sample_rate)
+    // configure LRCLK pin for PWM
+    uint slice = pwm_gpio_to_slice_num(I2S_LRCLK_PIN);
+    gpio_set_function(I2S_LRCLK_PIN, GPIO_FUNC_PWM);
+    uint32_t sys_hz = clock_get_hz(clk_sys);
+    // choose clock divider and wrap so wrap <= 65535
+    float clkdiv = 1.0f;
+    uint32_t wrap = sys_hz / i2s_cfg.sample_rate - 1;
+    if (wrap > 65535) {
+        // increase divisor
+        clkdiv = (float)sys_hz / (float)(i2s_cfg.sample_rate * 65536u) + 1.0f;
+        wrap = (uint32_t)((float)sys_hz / (clkdiv * (float)i2s_cfg.sample_rate) - 1.0f);
+        if (wrap > 65535) wrap = 65535;
+    }
+    pwm_set_wrap(slice, wrap);
+    pwm_set_chan_level(slice, pwm_gpio_to_channel(I2S_LRCLK_PIN), wrap/2);
+    pwm_set_clkdiv(slice, clkdiv);
+    pwm_set_enabled(slice, true);
+
+    // fill buffer with tone
+    i2s_fill_buffer(i2s_tone_freq);
+
+    // start PIO SM
+    pio_sm_set_enabled(i2s_pio, i2s_sm, true);
+
+    // start DMA
+    dma_channel_set_read_addr(i2s_dma_chan, i2s_buffer, false);
+    dma_channel_set_write_addr(i2s_dma_chan, &i2s_pio->txf[i2s_sm], false);
+    dma_channel_set_trans_count(i2s_dma_chan, I2S_BUFFER_FRAMES, true);
+    i2s_running = true;
+    printf("ACK: i2s started (sample_rate=%u, word_width=%u, channels=%u)\r\n", (unsigned)i2s_cfg.sample_rate, (unsigned)i2s_cfg.word_width, (unsigned)i2s_cfg.channels);
+    fflush(stdout);
+}
+
+static void i2s_stop(void) {
+    if (!i2s_running) return;
+    // stop DMA
+    dma_channel_abort(i2s_dma_chan);
+    // disable IRQ
+    dma_channel_set_irq0_enabled(i2s_dma_chan, false);
+    irq_set_enabled(DMA_IRQ_0, false);
+    // stop PIO
+    pio_sm_set_enabled(i2s_pio, i2s_sm, false);
+    // disable PWM LRCLK
+    pwm_set_enabled(pwm_gpio_to_slice_num(I2S_LRCLK_PIN), false);
+    i2s_running = false;
+    printf("ACK: i2s stopped\r\n");
+    fflush(stdout);
+}
+
 void command_task(void *pvParameters) {
     (void) pvParameters;
     char buf[128];
     size_t idx = 0;
     int c;
-    printf("Command task started. Commands: 'clocks', 'blink start', 'blink stop', 'blink interval <ms>', 'tick on', 'tick off', 'tone start', 'tone stop', 'tone freq <Hz>', 'i2s init <sample_rate> <word_width> <channels>', 'bootsel', 'reset'\r\n");
+    printf("Command task started. Commands: 'clocks', 'blink start', 'blink stop', 'blink interval <ms>', 'tick on', 'tick off', 'tone start', 'tone stop', 'tone freq <Hz>', 'tone measure <ms>', 'i2s init <sample_rate> <word_width> <channels>', 'i2s start', 'i2s stop', 'i2s tone <Hz>', 'bootsel', 'reset'\r\n");
     fflush(stdout);
 
     for (;;) {
@@ -131,14 +287,6 @@ void command_task(void *pvParameters) {
                 char *p = buf;
                 while (*p && (*p == ' ' || *p == '\t')) p++;
                 if (strcmp(p, "tick on") == 0) {
-                    tick_enabled = true;
-                    printf("ACK: tick enabled\r\n");
-                    fflush(stdout);
-                } else if (strcmp(p, "tick off") == 0) {
-                    tick_enabled = false;
-                    printf("ACK: tick disabled\r\n");
-                    fflush(stdout);
-                } else if (strcmp(p, "tick on") == 0) {
                     tick_enabled = true;
                     printf("ACK: tick enabled\r\n");
                     fflush(stdout);
@@ -216,7 +364,23 @@ void command_task(void *pvParameters) {
                     if (r >= 2) i2s_cfg.word_width = (uint8_t)ww;
                     if (r >= 3) i2s_cfg.channels = (uint8_t)ch;
                     printf("ACK: i2s configured: sample_rate=%u, word_width=%u, channels=%u\r\n", (unsigned)i2s_cfg.sample_rate, (unsigned)i2s_cfg.word_width, (unsigned)i2s_cfg.channels);
-                    printf("NOTE: PIO I2S TX not fully implemented; stored configuration for future use.\r\n");
+                    fflush(stdout);
+                } else if (strcmp(p, "i2s start") == 0) {
+                    i2s_start();
+                } else if (strcmp(p, "i2s stop") == 0) {
+                    i2s_stop();
+                } else if (strncmp(p, "i2s tone ", 9) == 0) {
+                    char *num = p + 9;
+                    long val = strtol(num, NULL, 10);
+                    if (val < 1 || val > 15000) {
+                        printf("ERR: invalid i2s tone frequency; must be 1..15000 Hz\r\n");
+                    } else {
+                        i2s_tone_freq = (uint32_t)val;
+                        if (i2s_running) {
+                            i2s_fill_buffer(i2s_tone_freq);
+                        }
+                        printf("ACK: i2s tone set to %u Hz\r\n", (unsigned)i2s_tone_freq);
+                    }
                     fflush(stdout);
                 } else if (strcmp(p, "bootsel") == 0) {
                     printf("ACK: rebooting to BOOTSEL (entering USB mass storage bootloader)\r\n");
@@ -248,7 +412,7 @@ int main() {
     // Create tasks
     xTaskCreate(blink_task, "blink", 256, NULL, 1, NULL);
     xTaskCreate(log_task, "log", 512, NULL, 2, NULL);
-    xTaskCreate(command_task, "cmd", 512, NULL, 1, NULL);
+    xTaskCreate(command_task, "cmd", 1024, NULL, 1, NULL);
 
     // Start the scheduler
     vTaskStartScheduler();

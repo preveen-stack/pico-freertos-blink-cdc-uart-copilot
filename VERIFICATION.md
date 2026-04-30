@@ -83,3 +83,14 @@ RequestedHz,MeasuredHz
 14000,
 15000,
 \nRaw log: verification/logs/serial_tone_sweep.log
+
+## Latest run (2026-04-30T12:42:41+05:30)
+- verification/logs/serial_postflash.log
+- verification/logs/serial_cmd_verify3.log
+
+## Hardware & versions
+- Board: Raspberry Pi Pico (RP2040)
+- Pico SDK commit: a1438dff
+- FreeRTOS-Kernel commit: d1f551e25
+
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>

@@ -1,0 +1,10 @@
+.program i2s_tx
+.side_set 1 opt
+; Simple I2S TX: out one bit at a time on DATA pin, toggle BCLK via sideset
+; Expects 32-bit FIFO words (left<<16 | (right & 0xFFFF))
+; Out shifts MSB first
+
+.wrap_target
+    out pins, 1    side 0    ; output next bit, BCLK low
+    nop            side 1    ; BCLK high
+.wrap

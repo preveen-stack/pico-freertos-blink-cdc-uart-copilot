@@ -5,6 +5,10 @@ project(rpi-pico-freertos-blink C CXX ASM)
 # Initialize the SDK
 pico_sdk_init()
 
+# Generate PIO header for I2S PIO program
+# moved to after target definition
+
+
 # Provide freertos_config target so FreeRTOS knows where FreeRTOSConfig.h lives
 add_library(freertos_config INTERFACE)
 # Project source dir contains FreeRTOSConfig.h
@@ -35,7 +39,10 @@ target_link_libraries(freertos_kernel PUBLIC pico_base_headers hardware_clocks h
 
 add_executable(rpi-pico-freertos-blink main.c)
 
-target_link_libraries(rpi-pico-freertos-blink PRIVATE freertos_kernel pico_stdlib hardware_gpio)
+target_link_libraries(rpi-pico-freertos-blink PRIVATE freertos_kernel pico_stdlib hardware_gpio hardware_pio hardware_dma hardware_irq hardware_pwm)
+
+# Generate PIO header for I2S PIO program (now that target exists)
+pico_generate_pio_header(rpi-pico-freertos-blink ${CMAKE_SOURCE_DIR}/i2s.pio)
 
 # Create map/bin/hex files
 pico_add_extra_outputs(rpi-pico-freertos-blink)
