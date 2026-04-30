@@ -1,0 +1,6 @@
+build/
+*.uf2
+*.elf
+*.bin
+CMakeFiles/
+CMakeCache.txt
