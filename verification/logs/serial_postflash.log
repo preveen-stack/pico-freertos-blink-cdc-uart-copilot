@@ -1,0 +1,13 @@
+LOG: tick 1
+System clocks:
+  clk_sys:  125000000 Hz
+  clk_usb:  48000000 Hz
+  clk_peri: 125000000 Hz
+ACK: tick disabled
+ACK: tick enabled
+ACK: blink interval set to 300 ms
+LOG: tick 2
+ACK: blink started
+LOG: tick 3
+ACK: blink stopped
+LOG: tick 4
