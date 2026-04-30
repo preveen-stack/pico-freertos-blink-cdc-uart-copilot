@@ -1,0 +1,6 @@
+ACK: tone started (400 Hz)
+ACK: tone frequency set to 1200 Hz
+LOG: tick 8
+MEAS: edges=719, duration_ms=300, freq=1198.33 Hz
+LOG: tick 9
+ACK: tone stopped

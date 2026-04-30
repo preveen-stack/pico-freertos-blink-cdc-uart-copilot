@@ -53,8 +53,13 @@ To re-run verification
 Conclusion
 - All commands responded as expected. Bootsel, reset, blink control, blink interval, and tick on/off work.
 
+Tone Verification
+- Tone start/stop and frequency control verified without external wiring by sampling the tone output pin in software.
+- Measured example: requested 1200 Hz, measured ~1198.33 Hz over 300 ms sampling.
+
 Notes
-- The verification logs are captured in build/serial_prebootsel.log and build/serial_postflash.log on the host.
-- To reproduce: connect to the Pico's USB-CDC (e.g., screen /dev/tty.usbmodem* 115200), send commands terminated with newline.
+- The verification logs are captured in build/serial_prebootsel.log, build/serial_postflash.log and build/serial_tone_manual_verify.log on the host.
+- Raw verification artifacts included in verification/logs directory.
+- To reproduce: connect to the Pico's USB-CDC (e.g., screen /dev/tty.usbmodem* 115200), send commands terminated with newline or run scripts/verify_serial.sh.
 
 Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
