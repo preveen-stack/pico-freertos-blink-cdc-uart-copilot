@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include "pico/stdlib.h"
 #include "hardware/clocks.h"
+#include "pico/bootrom.h"
+#include "hardware/watchdog.h"
 #include "FreeRTOS.h"
 #include "task.h"
 #include <string.h>
@@ -52,7 +54,7 @@ void command_task(void *pvParameters) {
     char buf[128];
     size_t idx = 0;
     int c;
-    printf("Command task started. Commands: 'clocks', 'blink start', 'blink stop', 'blink interval <ms>'\r\n");
+    printf("Command task started. Commands: 'clocks', 'blink start', 'blink stop', 'blink interval <ms>', 'bootsel', 'reset'\r\n");
     fflush(stdout);
 
     for (;;) {
@@ -85,6 +87,16 @@ void command_task(void *pvParameters) {
                     blink_interval_ms = (uint32_t)val;
                     printf("ACK: blink interval set to %u ms\r\n", (unsigned)blink_interval_ms);
                     fflush(stdout);
+                } else if (strcmp(p, "bootsel") == 0) {
+                    printf("ACK: rebooting to BOOTSEL (entering USB mass storage bootloader)\r\n");
+                    fflush(stdout);
+                    sleep_ms(100);
+                    reset_usb_boot(0, 0); // does not return
+                } else if (strcmp(p, "reset") == 0) {
+                    printf("ACK: resetting board\r\n");
+                    fflush(stdout);
+                    sleep_ms(100);
+                    watchdog_reboot(0, 0, 0); // should reboot
                 } else {
                     printf("ERR: unknown command: '%s'\r\n", p);
                     fflush(stdout);
