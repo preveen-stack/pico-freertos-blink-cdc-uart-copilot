@@ -303,6 +303,8 @@ void command_task(void *pvParameters) {
                     printf("  i2s stop                  - Stop I2S streaming\r\n");
                     printf("  i2s status                - Report I2S runtime status\r\n");
                     printf("  i2s tone <Hz>             - Set I2S tone frequency for next buffer fill\r\n");
+                    printf("  i2s measure bclk <ms>     - Measure BCLK frequency by sampling (default 200ms)\r\n");
+                    printf("  i2s measure lrclk <ms>    - Measure LRCLK frequency by sampling (default 200ms)\r\n");
                     printf("  bootsel                   - Reboot into BOOTSEL/USB mass storage mode\r\n");
                     printf("  reset                     - Reset the board\r\n");
                     printf("  help                      - Show this help message\r\n");
@@ -423,6 +425,60 @@ void command_task(void *pvParameters) {
                         printf("ACK: i2s tone set to %u Hz\r\n", (unsigned)i2s_tone_freq);
                     }
                     fflush(stdout);
+                } else if (strncmp(p, "i2s measure bclk", 16) == 0) {
+                    // i2s measure bclk <ms> : measure BCLK transitions (default 200 ms)
+                    char *num = p + 16;
+                    long ms = 200;
+                    if (*num) ms = strtol(num, NULL, 10);
+                    if (ms < 10) ms = 10;
+                    if (ms > 2000) ms = 2000; // limit
+                    if (!i2s_running) {
+                        printf("ERR: i2s not running, cannot measure bclk\r\n");
+                        fflush(stdout);
+                    } else {
+                        uint64_t start = time_us_64();
+                        uint64_t end = start + (uint64_t)ms * 1000ULL;
+                        int prev = gpio_get(I2S_BCLK_PIN);
+                        uint32_t edges = 0;
+                        while (time_us_64() < end) {
+                            int lvl = gpio_get(I2S_BCLK_PIN);
+                            if (lvl != prev) {
+                                edges++;
+                                prev = lvl;
+                            }
+                        }
+                        double duration_s = (double)ms / 1000.0;
+                        double freq = ((double)edges) / (2.0 * duration_s);
+                        printf("I2S_BCLK: edges=%u, duration_ms=%u, freq=%.2f Hz\r\n", (unsigned)edges, (unsigned)ms, freq);
+                        fflush(stdout);
+                    }
+                } else if (strncmp(p, "i2s measure lrclk", 17) == 0) {
+                    // i2s measure lrclk <ms> : measure LRCLK transitions (default 200 ms)
+                    char *num = p + 17;
+                    long ms = 200;
+                    if (*num) ms = strtol(num, NULL, 10);
+                    if (ms < 10) ms = 10;
+                    if (ms > 2000) ms = 2000; // limit
+                    if (!i2s_running) {
+                        printf("ERR: i2s not running, cannot measure lrclk\r\n");
+                        fflush(stdout);
+                    } else {
+                        uint64_t start = time_us_64();
+                        uint64_t end = start + (uint64_t)ms * 1000ULL;
+                        int prev = gpio_get(I2S_LRCLK_PIN);
+                        uint32_t edges = 0;
+                        while (time_us_64() < end) {
+                            int lvl = gpio_get(I2S_LRCLK_PIN);
+                            if (lvl != prev) {
+                                edges++;
+                                prev = lvl;
+                            }
+                        }
+                        double duration_s = (double)ms / 1000.0;
+                        double freq = ((double)edges) / (2.0 * duration_s);
+                        printf("I2S_LRCLK: edges=%u, duration_ms=%u, freq=%.2f Hz\r\n", (unsigned)edges, (unsigned)ms, freq);
+                        fflush(stdout);
+                    }
                 } else if (strcmp(p, "bootsel") == 0) {
                     printf("ACK: rebooting to BOOTSEL (entering USB mass storage bootloader)\r\n");
                     fflush(stdout);
