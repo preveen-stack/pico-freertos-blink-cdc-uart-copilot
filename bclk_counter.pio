@@ -1,0 +1,10 @@
+.program bclk_counter
+; Simple edge counter for BCLK
+; Waits for pin transitions and triggers IRQ on each edge
+
+.wrap_target
+    wait 1 pin 0          ; wait for pin high
+    irq 0                 ; signal IRQ 0
+    wait 0 pin 0          ; wait for pin low
+    irq 0                 ; signal IRQ 0
+.wrap

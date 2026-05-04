@@ -44,6 +44,9 @@ target_link_libraries(rpi-pico-freertos-blink PRIVATE freertos_kernel pico_stdli
 # Generate PIO header for I2S PIO program (now that target exists)
 pico_generate_pio_header(rpi-pico-freertos-blink ${CMAKE_SOURCE_DIR}/i2s.pio)
 
+# Generate PIO header for BCLK counter PIO program
+pico_generate_pio_header(rpi-pico-freertos-blink ${CMAKE_SOURCE_DIR}/bclk_counter.pio)
+
 # Create map/bin/hex files
 pico_add_extra_outputs(rpi-pico-freertos-blink)
 

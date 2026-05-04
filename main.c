@@ -16,6 +16,7 @@
 #include "hardware/irq.h"
 #include "hardware/pwm.h"
 #include "i2s.pio.h"
+#include "bclk_counter.pio.h"
 
 #define BLINK_GPIO 25
 #define TONE_PIN 18  // PWM-capable pin used for tone output (change as needed)
@@ -46,6 +47,11 @@ static PIO i2s_pio = pio0;
 static uint i2s_sm = 0xffff;
 static int i2s_dma_chan = -1;
 static volatile bool i2s_running = false;
+
+// BCLK edge counter state
+static PIO bclk_pio = pio0;
+static uint bclk_sm = 0xffff;
+static volatile uint32_t bclk_edge_count = 0;
 
 // Buffer: 32-bit words, each word holds left<<16 | (right & 0xFFFF)
 #define I2S_BUFFER_FRAMES 512u // power-of-two
@@ -141,6 +147,47 @@ static void __not_in_flash_func(i2s_dma_irq0_handler)(void) {
     // restart transfer
     dma_channel_set_read_addr(i2s_dma_chan, i2s_buffer, false);
     dma_channel_set_trans_count(i2s_dma_chan, I2S_BUFFER_FRAMES, true);
+}
+
+static void __not_in_flash_func(pio_irq_handler)(void) {
+    // BCLK counter IRQ handler: count edges
+    if (pio_interrupt_get(bclk_pio, 0)) {
+        pio_interrupt_clear(bclk_pio, 0);
+        bclk_edge_count++;
+    }
+}
+
+static bool bclk_counter_start(void) {
+    // Initialize and start BCLK edge counter PIO
+    if (bclk_sm == 0xffff) {
+        bclk_sm = pio_claim_unused_sm(bclk_pio, true);
+    }
+    uint offset = pio_add_program(bclk_pio, &bclk_counter_program);
+    pio_sm_config c = bclk_counter_program_get_default_config(offset);
+    
+    // Configure for BCLK pin (GPIO 14)
+    sm_config_set_jmp_pin(&c, I2S_BCLK_PIN);
+    
+    // Enable pin input on BCLK
+    pio_sm_set_consecutive_pindirs(bclk_pio, bclk_sm, I2S_BCLK_PIN, 1, false);
+    
+    bclk_edge_count = 0;
+    pio_sm_init(bclk_pio, bclk_sm, offset, &c);
+    pio_sm_set_enabled(bclk_pio, bclk_sm, true);
+    
+    // Set up IRQ
+    irq_set_exclusive_handler(PIO0_IRQ_0, pio_irq_handler);
+    irq_set_enabled(PIO0_IRQ_0, true);
+    pio_set_irq0_source_enabled(bclk_pio, pis_interrupt0, true);
+    
+    return true;
+}
+
+static void bclk_counter_stop(void) {
+    if (bclk_sm != 0xffff) {
+        pio_sm_set_enabled(bclk_pio, bclk_sm, false);
+        irq_set_enabled(PIO0_IRQ_0, false);
+    }
 }
 
 static bool i2s_init_pio_dma(void) {
@@ -426,7 +473,7 @@ void command_task(void *pvParameters) {
                     }
                     fflush(stdout);
                 } else if (strncmp(p, "i2s measure bclk", 16) == 0) {
-                    // i2s measure bclk <ms> : measure BCLK transitions (default 200 ms)
+                    // i2s measure bclk <ms> : measure BCLK frequency using PIO edge counter (default 200 ms)
                     char *num = p + 16;
                     long ms = 200;
                     if (*num) ms = strtol(num, NULL, 10);
@@ -436,20 +483,12 @@ void command_task(void *pvParameters) {
                         printf("ERR: i2s not running, cannot measure bclk\r\n");
                         fflush(stdout);
                     } else {
-                        uint64_t start = time_us_64();
-                        uint64_t end = start + (uint64_t)ms * 1000ULL;
-                        int prev = gpio_get(I2S_BCLK_PIN);
-                        uint32_t edges = 0;
-                        while (time_us_64() < end) {
-                            int lvl = gpio_get(I2S_BCLK_PIN);
-                            if (lvl != prev) {
-                                edges++;
-                                prev = lvl;
-                            }
-                        }
+                        bclk_counter_start();
+                        sleep_ms((uint32_t)ms);
+                        bclk_counter_stop();
                         double duration_s = (double)ms / 1000.0;
-                        double freq = ((double)edges) / (2.0 * duration_s);
-                        printf("I2S_BCLK: edges=%u, duration_ms=%u, freq=%.2f Hz\r\n", (unsigned)edges, (unsigned)ms, freq);
+                        double freq = ((double)bclk_edge_count) / (2.0 * duration_s);
+                        printf("I2S_BCLK: edges=%u, duration_ms=%u, freq=%.2f Hz\r\n", (unsigned)bclk_edge_count, (unsigned)ms, freq);
                         fflush(stdout);
                     }
                 } else if (strncmp(p, "i2s measure lrclk", 17) == 0) {
